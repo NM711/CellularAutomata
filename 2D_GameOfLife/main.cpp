@@ -1,31 +1,15 @@
+#include "../grid.hpp"
 #include "../window.hpp"
 #include <chrono>
 #include <cstdlib>
-#include <ctime>
 #include <iostream>
-#include <random>
 #include <thread>
 #include <vector>
-
-const int GRID_ROWS = 32;
-const int GRID_COLS = WindowUtil::getTermWindowInfo()->ws_col;
-const int GENERATION_COUNT = 1000;
-
-struct EntryPoint {
-    int row;
-    int col;
-};
 
 enum Pattern {
   OSCILLATOR_ANGEL_BLINKER,
   STILL_BLOCK,
   SPACESHIP_GLIDER
-};
-
-static int generateRandomNumber(int x, int y) {
-  static std::mt19937 mt;
-  std::uniform_int_distribution<int> distribution(x, y);
-  return distribution(mt);
 };
 
 /*
@@ -42,18 +26,21 @@ typedef std::vector<std::vector<int>> Grid;
 class GameOfLife {
   public:
     GameOfLife() {
-      this->grid = this->initGrid();
+      this->grid = GridUtil::InitGrid(GRID_ROWS, GRID_COLS);
     };
 
     void execute() {
       int generation = 0;
+      CellStateMap stateMap = {
+        {0, "."},
+        {1, "@"}
+      };
 
       while (true) {
         system("clear");
         std::cout << "Generation: " << generation << std::endl;
         std::cout << std::endl;
-        this->printGrid();
-
+        GridPrinterUtil::PrintGrid(this->grid, stateMap);
         // render updated grid then check for extinction to end game.
         if (this->isExtinction()) {
           break;
@@ -61,10 +48,10 @@ class GameOfLife {
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-        Grid newGeneration = this->initGrid();
+        Grid newGeneration = GridUtil::InitGrid(GRID_ROWS, GRID_COLS);
 
-        for (int row = 0; row < GRID_ROWS; ++row) {
-          for (int col = 0; col < GRID_COLS; ++col) {
+        for (int row = 0; row < this->GRID_ROWS; ++row) {
+          for (int col = 0; col < this->GRID_COLS; ++col) {
 
             int liveNeighbors = this->getNumOfNeighbors(row, col);
             int currentGenerationCell = this->grid.at(row).at(col);
@@ -73,26 +60,25 @@ class GameOfLife {
             if (currentGenerationCell == 1 && liveNeighbors < 2) {
               *newGenerationCell = 0;
             } else if (currentGenerationCell == 1 && (liveNeighbors == 2 || liveNeighbors == 3)) {
-              *newGenerationCell = this->grid.at(row).at(col);
+              *newGenerationCell = currentGenerationCell;
             } else if (currentGenerationCell == 1 && liveNeighbors > 3) {
               *newGenerationCell = 0;
             } else if (currentGenerationCell == 0 && liveNeighbors == 3) {
               *newGenerationCell = 1;
+            } else {
+              *newGenerationCell = currentGenerationCell;
             };
           };
         };
 
-        for (int row = 0; row < GRID_ROWS; ++row) {
-          for (int col = 0; col < GRID_COLS; ++col) {
-            this->grid.at(row).at(col) = newGeneration.at(row).at(col);
-          };
-        };
-
+        GridUtil::RepopulateGrid(this->grid, newGeneration);
         ++generation;
       };
 
-      this->logEntrypoints();
+      // If a game reaches a total en just print the entrypoints and the game over.
+      // Might just honestly redirect the entrypoint output to a text file. Could be useful for debugging, possibly.
 
+      GridPrinterUtil::PrintEntrypoints(this->entrypoints);
       std::cout << "Game Over!" << std::endl;
     };
 
@@ -102,8 +88,8 @@ class GameOfLife {
     */
 
     void createPattern(Pattern pattern) {
-      EntryPoint entrypoint = this->seed();
-      this->logEntrypoints();
+      Entrypoint entrypoint = GridUtil::GenerateGridEntrypoint(GRID_ROWS, GRID_COLS);
+      this->entrypoints.push_back(entrypoint);
 
       this->grid.at(entrypoint.row).at(entrypoint.col) = 1;
 
@@ -111,18 +97,14 @@ class GameOfLife {
 
       switch (pattern) {
         case Pattern::STILL_BLOCK:
-
-          if (entrypoint.row < GRID_ROWS - 1 && entrypoint.col < GRID_COLS - 1) {
+          if (entrypoint.row < this->GRID_ROWS - 1 && entrypoint.col < this->GRID_COLS - 1) {
             this->grid.at(entrypoint.row + 1).at(entrypoint.col) = 1;
             this->grid.at(entrypoint.row).at(entrypoint.col + 1) = 1;
           };
           break;
 
         case Pattern::SPACESHIP_GLIDER:
-          //   @
-          // @ @
-          //  @@
-          if (entrypoint.row < GRID_ROWS - 1 && entrypoint.col < GRID_COLS - 2) {
+          if (entrypoint.row < this->GRID_ROWS - 1 && entrypoint.col < this->GRID_COLS - 2) {
             this->grid.at(entrypoint.row + 1).at(entrypoint.col + 2) = 1;
             this->grid.at(entrypoint.row + 1).at(entrypoint.col + 1) = 1;
             // move two columns to the side, so we can make the gliders peak
@@ -133,8 +115,8 @@ class GameOfLife {
 
         case Pattern::OSCILLATOR_ANGEL_BLINKER:
           std::cout << "OSCI" << std::endl;
-          if ((entrypoint.row > 3 && entrypoint.row < GRID_ROWS - 4) &&
-              (entrypoint.col < GRID_COLS - 2 && entrypoint.col > 1)) {
+          if ((entrypoint.row > 3 && entrypoint.row < this->GRID_ROWS - 4) &&
+              (entrypoint.col < this->GRID_COLS - 2 && entrypoint.col > 1)) {
             // left hand side of angel
             this->grid.at(entrypoint.row - 1).at(entrypoint.col - 1) = 1;
             this->grid.at(entrypoint.row - 1).at(entrypoint.col - 2) = 1;
@@ -153,29 +135,16 @@ class GameOfLife {
 
   private:
     Grid grid;
-    std::vector<EntryPoint> entrypoints;
-
-    Grid initGrid() {
-      // allocating a number of ELEMENTS, not index count.
-      std::vector cols = std::vector(GRID_COLS, 0);
-      return std::vector(GRID_ROWS, cols);
-    };
-
-    void logEntrypoints() {
-      std::cout << "List of Seeded Entrypoints: " << std::endl;
-      for (int i = 0; i < this->entrypoints.size() - 1; ++i) {
-        std::cout << '\t' << i + 1 << ". "
-                  << "(ROW: " << this->entrypoints.at(i).row << ", COL: " << this->entrypoints.at(i).col << ")" << std::endl;
-      };
-    };
-
+    std::vector<Entrypoint> entrypoints;
+    const int GRID_ROWS = 32;
+    const int GRID_COLS = WindowUtil::getTermWindowInfo()->ws_col;
+    
     bool isExtinction() {
 
       bool isExtinct = true;
 
-      for (int row = 0; row < GRID_ROWS; ++row) {
-        for (int col = 0; col < GRID_COLS; ++col) {
-
+      for (int row = 0; row < this->GRID_ROWS; ++row) {
+        for (int col = 0; col < this->GRID_COLS; ++col) {
           if (this->grid.at(row).at(col) == 1) {
             isExtinct = false;
           };
@@ -193,7 +162,7 @@ class GameOfLife {
 
     int getNumOfNeighbors(int row, int col) {
       // In all honesty this is a series of checks which are written in a very ass manner.
-      
+
       int liveNeighbors = 0;
       bool validTop = false;
       bool validBottom = false;
@@ -201,7 +170,7 @@ class GameOfLife {
       // edge checking.
 
       // top check
-      
+
       if (row > 0) {
         int top = this->grid.at(row - 1).at(col);
         this->isAlive(top, liveNeighbors);
@@ -210,14 +179,14 @@ class GameOfLife {
 
       // bottom check
 
-      if (row < GRID_ROWS - 1) {
+      if (row < this->GRID_ROWS - 1) {
         int bottom = this->grid.at(row + 1).at(col);
         this->isAlive(bottom, liveNeighbors);
         validBottom = true;
       };
 
       // left checks
-      
+
       if (col > 0) {
         int left = this->grid.at(row).at(col - 1);
         this->isAlive(left, liveNeighbors);
@@ -235,7 +204,7 @@ class GameOfLife {
 
       // right checks
 
-      if (col < GRID_COLS - 1) {
+      if (col < this->GRID_COLS - 1) {
         int right = this->grid.at(row).at(col + 1);
         this->isAlive(right, liveNeighbors);
 
@@ -251,29 +220,6 @@ class GameOfLife {
       };
 
       return liveNeighbors;
-    };
-
-    EntryPoint seed() {
-      int randomRow = generateRandomNumber(1, GRID_ROWS - 1);
-      int randomCol = generateRandomNumber(1, GRID_COLS - 1);
-      EntryPoint entrypoint = {randomRow, randomCol};
-      this->entrypoints.push_back(entrypoint);
-      return entrypoint;
-    };
-
-    void printGrid() {
-      for (int row = 0; row < GRID_ROWS; ++row) {
-        for (int col = 0; col < GRID_COLS; ++col) {
-          const int cell = this->grid.at(row).at(col);
-          if (cell == 1) {
-            std::cout << "@";
-          } else {
-            std::cout << ".";
-          };
-        };
-        // once done printing row, output newline
-        std::cout << std::endl;
-      };
     };
 };
 
