@@ -71,7 +71,7 @@ class GameOfLife {
           };
         };
 
-        GridUtil::RepopulateGrid(this->grid, newGeneration);
+        GridUtil::UpdateGrid(this->grid, newGeneration);
         ++generation;
       };
 

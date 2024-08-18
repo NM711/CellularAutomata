@@ -74,17 +74,13 @@ class GridUtil {
     };
 
     /*
-      Populates original grid with the values of the most recent one.
+      Swaps the reference of the original grid to the updated grid.
     */
 
-    static void RepopulateGrid(Grid &originalGrid, Grid &newGrid) {
-      for (int row = 0; row < originalGrid.size(); ++row) {
-        for (int col = 0; col < originalGrid.at(row).size(); ++col) {
-          originalGrid.at(row).at(col) = newGrid.at(row).at(col);
-        };
-      };
+    static void UpdateGrid(Grid &originalGrid, Grid &newGrid) {
+      originalGrid = newGrid;
     };
-    
+
     /*
       Generates a random number starting from x (min) to y (max)
     */
